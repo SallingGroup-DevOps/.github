@@ -3,6 +3,8 @@ name: CI-teardown
 on:
   delete:
   workflow_dispatch:
+  repository_dispatch:
+    types: [ org-workflow-bot ]
 concurrency:
   group: ${{ github.event.ref }}
   cancel-in-progress: true
