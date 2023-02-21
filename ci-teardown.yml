@@ -1,0 +1,45 @@
+---
+name: CI-teardown
+on:
+  delete:
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.event.ref }}
+  cancel-in-progress: true
+jobs:
+  teardown:
+    name: "Teardown project & resources"
+    if: github.event.ref_type == 'branch' || github.event_name == 'workflow_dispatch'
+    runs-on: eco-gcp-dev
+    continue-on-error: false
+    steps:
+      - name: Export environment variables
+        id: export-envs
+        uses: SallingGroup-DevOps/gha-ocp-envs@v1
+      - name: Delete ArgoCD project
+        continue-on-error: true
+        run: |
+          argocd app delete ${{steps.export-envs.outputs.OS_PROJECT_DELETE}} \
+          --auth-token ${{secrets.ARGOCD_DEV_TOKEN}} \
+          --server ${{vars.ARGOCD_DEV_URL}} --grpc-web
+      - name: Login to Openshift
+        run: "oc login --token ${{ secrets.OPENSHIFT_GCP_DEV_TOKEN }} ${{ vars.OPENSHIFT_GCP_DEV_CLUSTER }}"
+      - name: Delete Openshift project
+        continue-on-error: true
+        run: "oc delete project ${{steps.export-envs.outputs.OS_PROJECT_DELETE}}"
+      - name: Teardown DB in CloudSQL
+        continue-on-error: true
+        uses: SallingGroup-DevOps/gha-gcp-cloudsql-postgres@v1
+        with:
+          state: absent
+          gcp-project: ${{secrets.GCP_DEV_POSTGRES_DB_PROJECT}}
+          gcp-gcloud-instance: ${{secrets.GCP_DEV_POSTGRES_DB_INSTANCE}}
+          name: "${{steps.export-envs.outputs.OS_PROJECT_DELETE_VAR}}_db"
+          user: "${{steps.export-envs.outputs.OS_PROJECT_DELETE_VAR}}_user"
+      - name: "Teardown Summary"
+        run: |
+          echo "## Teardown project for ${{steps.export-envs.outputs.GIT_REPOSITORY}} App" >> $GITHUB_STEP_SUMMARY
+          echo " " >> $GITHUB_STEP_SUMMARY
+          echo "ArgoCD App          : ${{steps.export-envs.outputs.OS_PROJECT_DELETE}}" >> $GITHUB_STEP_SUMMARY
+          echo "OpenShift Project   : ${{steps.export-envs.outputs.OS_PROJECT_DELETE}}" >> $GITHUB_STEP_SUMMARY
+          echo "GCP DB              : ${{steps.export-envs.outputs.OS_PROJECT_DELETE_VAR}}_db" >> $GITHUB_STEP_SUMMARY
